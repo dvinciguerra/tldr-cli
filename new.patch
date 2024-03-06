@@ -1,0 +1,103 @@
+ lib/tldr/cli/commands.rb | 57 +++++++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 52 insertions(+), 5 deletions(-)
+
+diff --git a/lib/tldr/cli/commands.rb b/lib/tldr/cli/commands.rb
+index c9aea38..8998696 100644
+--- a/lib/tldr/cli/commands.rb
++++ b/lib/tldr/cli/commands.rb
+@@ -15,6 +15,9 @@ module TLDR
+       URL_SUFFIX =
+         ENV.fetch('TLDR_URL_SUFFIX', '.md')
+ 
++      LOCAL_BASE =
++        ENV.fetch('TLDR_LOCAL_BASE', "#{Dir.home}/.config/tldr/pages")
++
+       usage do
+         program 'tldr'
+ 
+@@ -63,6 +66,25 @@ module TLDR
+       #   desc 'list all entries in the local database'
+       # end
+ 
++      option :lang do
++        optional
++        short '-l'
++        long '--lang=string'
++        default 'en'
++        permit %w[ar bn bs ca cs da de en es fa fi fr hi id it ja ko lo ml ne nl no pl pt_BR pt_PT ro ru sh sr sv ta th tr uk uz zh zh_TW]
++        desc 'select language of page to be displayed (default: en)'
++      end
++
++      option :source do
++        optional
++        short '-s'
++        long '--source=string'
++        default 'local'
++        permit %w[local remote]
++        desc 'select page source to be local or remote (default: local)'
++      end
++
++
+       option :platform do
+         optional
+         short '-p'
+@@ -86,15 +108,22 @@ module TLDR
+         elsif params[:version]
+           version
+         elsif params[:query]
+-          query = params[:query]
+-          platform = params[:platform]
++          query, lang, source, platform =
++            params.to_h.values_at(:query, :lang, :source, :platform)
++
++          page_path = "/#{platform}/#{query}"
+ 
+-          response = Faraday.get("#{URL_BASE}/#{platform}/#{query}#{URL_SUFFIX}")
++          if source == 'local' && local_page?(local_path(page_path, lang: lang))
++            content = File.read(local_path(page_path, lang: lang))
++            render_markdown(content)
++            return
++          end
+ 
++          puts "Fetching page from #{source} source..." if
++          response = Faraday.get(remote_path(page_path, lang: lang))
+           return not_found unless response.success?
+ 
+-          markdown = TTY::Markdown.parse(response.body, symbols: { override: { bullet: '-' } })
+-          puts markdown
++          render_markdown(response.body)
+         else
+           print help
+         end
+@@ -102,6 +131,10 @@ module TLDR
+ 
+       private
+ 
++      def render_markdown(content)
++        puts TTY::Markdown.parse(content, symbols: { override: { bullet: '-' } })
++      end
++
+       def version
+         puts <<~MESSAGE
+           tldr v#{TLDR::CLI::VERSION} (v#{TLDR::CLI::VERSION})
+@@ -116,6 +149,20 @@ module TLDR
+           Submit new pages here: https://github.com/tldr-pages/tldr
+         MESSAGE
+       end
++
++      def local_path(fragment, lang: 'en', relative: false)
++        lang = lang == 'en' ? '' : ".#{lang.to_s}"
++        "#{relative ? '' : LOCAL_BASE}#{lang}#{fragment}#{URL_SUFFIX}"
++      end
++
++      def remote_path(fragment, lang: 'en', relative: false)
++        lang = lang == 'en' ? '' : ".#{lang.to_s}"
++        "#{relative ? '' : URL_BASE}#{lang}#{fragment}#{URL_SUFFIX}"
++      end
++
++      def local_page?(page_path)
++        File.exist?(page_path)
++      end
+     end
+   end
+ end

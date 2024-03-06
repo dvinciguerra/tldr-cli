@@ -63,6 +63,16 @@ module TLDR
       #   desc 'list all entries in the local database'
       # end
 
+      option :lang do
+        optional
+        short '-l'
+        long '--lang=string'
+        default 'en'
+        permit %w[ar bn bs ca cs da de en es fa fi fr hi id it ja ko lo ml ne nl no pl pt_BR pt_PT ro ru sh sr sv ta th
+                  tr uk uz zh zh_TW]
+        desc 'select language of page to be displayed (default: en)'
+      end
+
       option :platform do
         optional
         short '-p'
@@ -86,21 +96,25 @@ module TLDR
         elsif params[:version]
           version
         elsif params[:query]
-          query = params[:query]
-          platform = params[:platform]
+          query, lang, platform =
+            params.to_h.values_at(:query, :lang, :platform)
 
-          response = Faraday.get("#{URL_BASE}/#{platform}/#{query}#{URL_SUFFIX}")
+          page_path = "/#{platform}/#{query}"
 
+          response = Faraday.get(remote_path(page_path, lang: lang))
           return not_found unless response.success?
 
-          markdown = TTY::Markdown.parse(response.body, symbols: { override: { bullet: '-' } })
-          puts markdown
+          render_markdown(response.body)
         else
           print help
         end
       end
 
       private
+
+      def render_markdown(content)
+        puts TTY::Markdown.parse(content, symbols: { override: { bullet: '-' } })
+      end
 
       def version
         puts <<~MESSAGE
@@ -115,6 +129,11 @@ module TLDR
           This page doesn't exist yet!
           Submit new pages here: https://github.com/tldr-pages/tldr
         MESSAGE
+      end
+
+      def remote_path(fragment, lang: 'en', relative: false)
+        lang = lang == 'en' ? '' : ".#{lang}"
+        "#{relative ? '' : URL_BASE}#{lang}#{fragment}#{URL_SUFFIX}"
       end
     end
   end

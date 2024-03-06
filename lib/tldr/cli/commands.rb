@@ -15,6 +15,9 @@ module TLDR
       URL_SUFFIX =
         ENV.fetch('TLDR_URL_SUFFIX', '.md')
 
+      LOCAL_BASE =
+        ENV.fetch('TLDR_LOCAL_BASE', "#{Dir.home}/.config/tldr/pages")
+
       usage do
         program 'tldr'
 
@@ -82,6 +85,15 @@ module TLDR
         desc 'select platform, supported are linux / osx / sunos / windows / common'
       end
 
+      option :source do
+        optional
+        short '-s'
+        long '--source=string'
+        default 'local'
+        permit %w[local remote]
+        desc 'select page source to be local or remote (default: local)'
+      end
+
       argument :query do
         arity zero_or_more
       end
@@ -96,10 +108,16 @@ module TLDR
         elsif params[:version]
           version
         elsif params[:query]
-          query, lang, platform =
-            params.to_h.values_at(:query, :lang, :platform)
+          query, lang, platform, source =
+            params.to_h.values_at(:query, :lang, :platform, :source)
 
           page_path = "/#{platform}/#{query}"
+
+          if source == 'local' && local_page?(local_path(page_path, lang: lang))
+            content = File.read(local_path(page_path, lang: lang))
+            render_markdown(content)
+            return
+          end
 
           response = Faraday.get(remote_path(page_path, lang: lang))
           return not_found unless response.success?
@@ -129,6 +147,15 @@ module TLDR
           This page doesn't exist yet!
           Submit new pages here: https://github.com/tldr-pages/tldr
         MESSAGE
+      end
+
+      def local_page?(page_path)
+        File.exist?(page_path)
+      end
+
+      def local_path(fragment, lang: 'en', relative: false)
+        lang = lang == 'en' ? '' : ".#{lang}"
+        "#{relative ? '' : LOCAL_BASE}#{lang}#{fragment}#{URL_SUFFIX}"
       end
 
       def remote_path(fragment, lang: 'en', relative: false)
